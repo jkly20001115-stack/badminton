@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>第一人称羽毛球</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="gameCanvas" aria-label="第一人称羽毛球游戏画面"></canvas>
+
+      <section id="menu" class="screen">
+        <div class="menu-shell">
+          <p class="eyebrow">First Person Badminton</p>
+          <h1>第一人称羽毛球</h1>
+          <p class="lead">15 分制，三局两胜。单人对战脚本电脑，双人通过房间联网对战。</p>
+
+          <div class="mode-grid">
+            <button id="singleModeBtn" class="mode-button" type="button">
+              <span>单人模式</span>
+              <small>对战带随机失误的电脑脚本</small>
+            </button>
+            <button id="multiModeBtn" class="mode-button" type="button">
+              <span>双人模式</span>
+              <small>创建房间或输入房间号加入</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="singlePanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>单人模式</h2>
+          <label class="field">
+            <span>电脑难度</span>
+            <select id="difficultySelect">
+              <option value="easy">简单</option>
+              <option value="normal" selected>普通</option>
+              <option value="hard">困难</option>
+            </select>
+          </label>
+          <button id="startSingleBtn" class="primary" type="button">开始比赛</button>
+        </div>
+      </section>
+
+      <section id="multiPanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>双人模式</h2>
+          <label class="field">
+            <span>昵称</span>
+            <input id="playerNameInput" maxlength="18" placeholder="Player" />
+          </label>
+          <div class="button-row">
+            <button id="createRoomBtn" class="primary" type="button">创建房间</button>
+            <button id="joinRoomBtn" class="secondary" type="button">加入房间</button>
+          </div>
+          <label class="field">
+            <span>房间号</span>
+            <input id="roomCodeInput" maxlength="8" placeholder="例如 A1B2" />
+          </label>
+          <div id="roomStatus" class="status-box">尚未连接房间</div>
+          <button id="readyBtn" class="primary hidden" type="button">准备</button>
+        </div>
+      </section>
+
+      <section id="hud" class="hud hidden" aria-live="polite">
+        <div class="score-strip">
+          <div>
+            <span class="label">你</span>
+            <strong id="localScore">0</strong>
+          </div>
+          <div>
+            <span class="label">对手</span>
+            <strong id="awayScore">0</strong>
+          </div>
+          <div>
+            <span class="label">局分</span>
+            <strong id="gameScore">0 : 0</strong>
+          </div>
+          <div>
+            <span class="label">第</span>
+            <strong id="setNumber">1 局</strong>
+          </div>
+        </div>
+        <div id="messageBar" class="message-bar">点击画面进入第一人称视角</div>
+      </section>
+
+      <section id="endScreen" class="screen hidden">
+        <div class="panel">
+          <h2 id="endTitle">比赛结束</h2>
+          <div id="setSummary" class="set-summary"></div>
+          <div class="button-row">
+            <button id="playAgainBtn" class="primary" type="button">再来一场</button>
+            <button id="quitBtn" class="secondary" type="button">返回主菜单</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="pauseScreen" class="screen pause-screen hidden">
+        <div class="panel">
+          <h2 id="pauseTitle">已暂停</h2>
+          <p id="pauseText" class="pause-copy">当前对局已暂停。</p>
+          <div class="button-row">
+            <button id="resumeBtn" class="primary" type="button">继续比赛</button>
+            <button id="pauseQuitBtn" class="secondary" type="button">退出对局</button>
+          </div>
+        </div>
+      </section>
+
+      <button id="pauseFab" class="pause-fab hidden" type="button">暂停/退出</button>
+      <div id="crosshair" class="crosshair hidden" aria-hidden="true"></div>
+      <div id="toast" class="toast hidden"></div>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

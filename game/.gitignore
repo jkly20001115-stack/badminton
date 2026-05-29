@@ -1,0 +1,6 @@
+node_modules/
+.chrome-profile*/
+.edge-profile*/
+server.out.log
+server.err.log
+screenshot-*.png

@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd game && npm install",
+  "buildCommand": "cd game && npm run build",
+  "outputDirectory": "game/public",
+  "framework": null
+}

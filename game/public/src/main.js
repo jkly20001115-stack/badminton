@@ -1,4 +1,9 @@
 import * as THREE from '/vendor/three.module.js';
+import {
+  createRealtimeChannel,
+  isSupabaseConfigured,
+  saveMatchResult,
+} from './supabase-game.js';
 
 const COURT = {
   halfLength: 6.7,
@@ -81,6 +86,9 @@ const state = {
   pauseOpen: false,
   isCharging: false,
   chargeStartedAt: 0,
+  onlineRoom: null,
+  matchStartedAt: 0,
+  resultSaveKey: '',
 };
 
 let renderer;
@@ -394,6 +402,7 @@ function applyLaunchParams() {
 
 function startSingle() {
   disconnectSocket();
+  leaveOnlineRoom();
   state.mode = 'single';
   state.localSeat = 'A';
   state.opponentSeat = 'B';
@@ -406,6 +415,8 @@ function startSingle() {
   state.ball = makeBall('A');
   state.previousPhase = '';
   state.lastLocalHitAt = -Infinity;
+  state.matchStartedAt = performance.now();
+  state.resultSaveKey = '';
   state.paused = false;
   state.pauseOpen = false;
   cancelCharge();
@@ -416,6 +427,10 @@ function startSingle() {
 }
 
 function createRoom() {
+  if (isSupabaseConfigured()) {
+    createOnlineRoom().catch(handleOnlineRoomError);
+    return;
+  }
   connectSocket(() => {
     state.ws.send(JSON.stringify({ type: 'create', name: getPlayerName() }));
   });
@@ -427,12 +442,17 @@ function joinRoom() {
     toast('请输入房间号');
     return;
   }
+  if (isSupabaseConfigured()) {
+    joinOnlineRoom(roomId).catch(handleOnlineRoomError);
+    return;
+  }
   connectSocket(() => {
     state.ws.send(JSON.stringify({ type: 'join', roomId, name: getPlayerName() }));
   });
 }
 
 function connectSocket(onOpen) {
+  leaveOnlineRoom();
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     onOpen();
     return;
@@ -537,10 +557,296 @@ function updateRoomStatus(roomState) {
 }
 
 function toggleReady() {
+  if (state.onlineRoom) {
+    state.ready = !state.ready;
+    dom.readyBtn.textContent = state.ready ? '取消准备' : '准备';
+    sendOnlineMessage({ type: 'ready', seat: state.localSeat, ready: state.ready });
+    if (state.onlineRoom.isHost) {
+      state.onlineRoom.ready[state.localSeat] = state.ready;
+      maybeStartOnlineHostMatch();
+      updateRoomStatus(getOnlineRoomState());
+      broadcastOnlineRoomState();
+    }
+    return;
+  }
+
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   state.ready = !state.ready;
   dom.readyBtn.textContent = state.ready ? '取消准备' : '准备';
   state.ws.send(JSON.stringify({ type: 'ready', ready: state.ready }));
+}
+
+async function createOnlineRoom() {
+  const roomId = makeRoomCode();
+  await setupOnlineRoom({
+    roomId,
+    seat: 'A',
+    isHost: true,
+    name: getPlayerName(),
+  });
+  state.onlineRoom.names.A = getPlayerName();
+  updateRoomStatus(getOnlineRoomState());
+  toast(`房间已创建：${roomId}`);
+}
+
+async function joinOnlineRoom(roomId) {
+  await setupOnlineRoom({
+    roomId,
+    seat: 'B',
+    isHost: false,
+    name: getPlayerName(),
+  });
+  sendOnlineMessage({ type: 'join', name: getPlayerName() });
+  dom.roomStatus.textContent = `正在加入房间 ${roomId}...`;
+  state.onlineRoom.joinTimeoutId = window.setTimeout(() => {
+    if (!state.onlineRoom || state.onlineRoom.names.A) return;
+    dom.roomStatus.textContent = '未找到该房间，请确认房间号或让房主重新创建';
+    dom.readyBtn.classList.add('hidden');
+    toast('未收到房主响应');
+    leaveOnlineRoom();
+  }, 7000);
+}
+
+async function setupOnlineRoom({ roomId, seat, isHost, name }) {
+  disconnectSocket();
+  leaveOnlineRoom();
+
+  state.mode = 'multi';
+  state.roomId = roomId;
+  state.localSeat = seat;
+  state.opponentSeat = opponent(seat);
+  state.local = makePlayer(seat);
+  state.opponent = makePlayer(state.opponentSeat);
+  state.match = makeMatch();
+  state.match.phase = 'waiting';
+  state.match.message = isHost ? '等待第二名玩家加入' : '等待房主确认加入';
+  state.ball = makeBall('A');
+  state.ready = false;
+  state.lastLocalHitAt = -Infinity;
+  state.matchStartedAt = 0;
+  state.resultSaveKey = '';
+
+  const clientId = crypto.randomUUID();
+  const { client, channel } = await createRealtimeChannel(roomId, handleOnlineMessage);
+  state.onlineRoom = {
+    client,
+    channel,
+    clientId,
+    roomId,
+    isHost,
+    names: { A: isHost ? name : '', B: isHost ? '' : name },
+    ready: { A: false, B: false },
+    lastBroadcastAt: 0,
+  };
+
+  dom.readyBtn.textContent = '准备';
+  dom.readyBtn.classList.remove('hidden');
+}
+
+function handleOnlineMessage(payload) {
+  if (!state.onlineRoom || !payload || payload.clientId === state.onlineRoom.clientId) return;
+
+  if (state.onlineRoom.isHost) {
+    handleOnlineHostMessage(payload);
+    return;
+  }
+
+  if (payload.type === 'accepted' && payload.targetClientId === state.onlineRoom.clientId) {
+    if (state.onlineRoom.joinTimeoutId) {
+      window.clearTimeout(state.onlineRoom.joinTimeoutId);
+      state.onlineRoom.joinTimeoutId = 0;
+    }
+    state.onlineRoom.names = payload.state.names;
+    state.onlineRoom.ready = payload.state.ready;
+    applyRoomState(payload.state);
+    updateRoomStatus(payload.state);
+    toast('已加入房间');
+    return;
+  }
+
+  if (payload.type === 'reject' && payload.targetClientId === state.onlineRoom.clientId) {
+    if (state.onlineRoom.joinTimeoutId) {
+      window.clearTimeout(state.onlineRoom.joinTimeoutId);
+      state.onlineRoom.joinTimeoutId = 0;
+    }
+    dom.roomStatus.textContent = payload.reason || '加入房间失败';
+    dom.readyBtn.classList.add('hidden');
+    toast(payload.reason || '加入房间失败');
+    leaveOnlineRoom();
+    return;
+  }
+
+  if (payload.type === 'state' || payload.type === 'room') {
+    applyRoomState(payload.state);
+    updateRoomStatus(payload.state);
+  }
+}
+
+function handleOnlineHostMessage(payload) {
+  if (!state.onlineRoom.isHost) return;
+
+  if (payload.type === 'join') {
+    if (state.onlineRoom.names.B) {
+      sendOnlineMessage({ type: 'reject', targetClientId: payload.clientId, reason: '房间已满' });
+      return;
+    }
+    state.onlineRoom.names.B = String(payload.name || 'Player').slice(0, 18);
+    state.onlineRoom.ready.B = false;
+    state.match.phase = 'ready';
+    state.match.message = '等待双方准备';
+    sendOnlineMessage({
+      type: 'accepted',
+      targetClientId: payload.clientId,
+      state: getOnlineRoomState(),
+    });
+    broadcastOnlineRoomState();
+    updateRoomStatus(getOnlineRoomState());
+    return;
+  }
+
+  if (payload.type === 'ready') {
+    state.onlineRoom.ready[payload.seat] = Boolean(payload.ready);
+    maybeStartOnlineHostMatch();
+    broadcastOnlineRoomState();
+    updateRoomStatus(getOnlineRoomState());
+    return;
+  }
+
+  if (payload.type === 'input') {
+    applyOnlinePlayerInput(payload.seat, payload.state);
+    return;
+  }
+
+  if (payload.type === 'hit') {
+    const aim = payload.aim || {};
+    const direction = new THREE.Vector3(Number(aim.x) || 0, 0, Number(aim.z) || (payload.seat === 'A' ? 1 : -1));
+    if (direction.lengthSq() < 0.001) direction.set(0, 0, payload.seat === 'A' ? 1 : -1);
+    if (canHit(payload.seat)) {
+      hitBall(payload.seat, direction.normalize(), { power: Number(aim.power) || 1 });
+    }
+  }
+}
+
+function maybeStartOnlineHostMatch() {
+  if (!state.onlineRoom?.isHost) return;
+  if (!state.onlineRoom.names.B) {
+    state.match.phase = 'waiting';
+    state.match.message = '等待第二名玩家加入';
+    return;
+  }
+  if (!state.onlineRoom.ready.A || !state.onlineRoom.ready.B) {
+    state.match.phase = 'ready';
+    state.match.message = '等待双方准备';
+    return;
+  }
+  if (['waiting', 'ready', 'matchOver'].includes(state.match.phase)) {
+    state.local = makePlayer('A');
+    state.opponent = makePlayer('B');
+    state.match = makeMatch();
+    state.match.phase = 'serve';
+    state.match.message = 'A 方发球';
+    state.matchStartedAt = performance.now();
+    state.resultSaveKey = '';
+    resetBall('A');
+    showGameHud();
+  }
+}
+
+function updateOnlineHost(dt) {
+  if (!state.onlineRoom?.isHost) return;
+  const now = performance.now();
+
+  if (state.match.phase === 'serve') {
+    updateServeBallPosition(state.match.server);
+  }
+
+  if (state.match.phase === 'rally') {
+    updateBallPhysics(dt);
+  }
+
+  if (state.match.phase === 'pointOver' && now >= state.match.nextAt) {
+    resetBall(state.match.server);
+    state.match.phase = 'serve';
+    state.match.message = `${state.match.server} 方发球`;
+  }
+
+  if (state.match.phase === 'gameOver' && now >= state.match.nextAt) {
+    state.match.points = { A: 0, B: 0 };
+    state.match.setNumber += 1;
+    resetBall(state.match.server);
+    state.match.phase = 'serve';
+    state.match.message = `第 ${state.match.setNumber} 局，${state.match.server} 方发球`;
+  }
+
+  updateHud();
+  maybeShowEnd();
+}
+
+function applyOnlinePlayerInput(seat, input = {}) {
+  if (!seat || seat === state.localSeat) return;
+  const player = seat === state.opponentSeat ? state.opponent : null;
+  if (!player || !Array.isArray(input.position)) return;
+  player.position.set(input.position[0], input.position[1], input.position[2]);
+  player.yaw = Number(input.yaw) || player.yaw;
+  player.pitch = 0;
+  player.moving = Boolean(input.moving);
+}
+
+function sendOnlineMessage(message) {
+  if (!state.onlineRoom?.channel) return;
+  state.onlineRoom.channel.send({
+    type: 'broadcast',
+    event: 'game',
+    payload: {
+      ...message,
+      clientId: state.onlineRoom.clientId,
+      roomId: state.onlineRoom.roomId,
+    },
+  });
+}
+
+function broadcastOnlineRoomState() {
+  if (!state.onlineRoom?.isHost) return;
+  const now = performance.now();
+  if (now - state.onlineRoom.lastBroadcastAt < 45) return;
+  state.onlineRoom.lastBroadcastAt = now;
+  sendOnlineMessage({ type: 'state', state: getOnlineRoomState() });
+}
+
+function getOnlineRoomState() {
+  return {
+    id: state.onlineRoom?.roomId || state.roomId,
+    names: state.onlineRoom?.names || { A: '', B: '' },
+    seats: { A: true, B: Boolean(state.onlineRoom?.names.B) },
+    ready: state.onlineRoom?.ready || { A: false, B: false },
+    players: {
+      A: playerSnapshot(state.localSeat === 'A' ? state.local : state.opponent),
+      B: playerSnapshot(state.localSeat === 'B' ? state.local : state.opponent),
+    },
+    ball: {
+      position: state.ball.position.toArray(),
+      velocity: state.ball.velocity.toArray(),
+      lastHit: state.ball.lastHit,
+    },
+    match: state.match,
+  };
+}
+
+function playerSnapshot(player) {
+  return {
+    position: player.position.toArray(),
+    yaw: player.yaw,
+    pitch: 0,
+    moving: player.moving,
+  };
+}
+
+function handleOnlineRoomError(error) {
+  console.warn('Supabase online room failed', error);
+  dom.roomStatus.textContent = '在线房间连接失败，请检查 Supabase 配置';
+  dom.readyBtn.classList.add('hidden');
+  leaveOnlineRoom();
+  toast('在线房间连接失败');
 }
 
 function beginCharge() {
@@ -568,6 +874,27 @@ function cancelCharge() {
 }
 
 function attemptLocalHit(power = 1) {
+  if (state.onlineRoom) {
+    if (!canHit(state.localSeat)) {
+      swingRacket();
+      toast(hitBlockedMessage());
+      return;
+    }
+    const direction = getAimDirection();
+    if (state.onlineRoom.isHost) {
+      hitBall(state.localSeat, direction, { power });
+    } else {
+      sendOnlineMessage({
+        type: 'hit',
+        seat: state.localSeat,
+        aim: { x: direction.x, y: direction.y, z: direction.z, power },
+      });
+    }
+    state.lastLocalHitAt = performance.now();
+    swingRacket();
+    return;
+  }
+
   if (state.mode === 'multi') {
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
     if (!canHit(state.localSeat)) {
@@ -623,7 +950,7 @@ function hitBall(seat, aimDirection, options = {}) {
   state.ball.lastHit = seat;
   state.match.phase = 'rally';
   state.match.rally += 1;
-  state.match.message = seat === 'A' ? '你方击球' : '电脑击球';
+  state.match.message = state.mode === 'single' ? (seat === 'A' ? '你方击球' : '电脑击球') : `${seat} 方击球`;
 }
 
 function aiHit(options = {}) {
@@ -734,6 +1061,9 @@ function animate() {
   } else if (state.mode === 'multi') {
     if (!state.pauseOpen) {
       updateLocalMovement(dt);
+      if (state.onlineRoom?.isHost) {
+        updateOnlineHost(dt);
+      }
       maybeSendInput();
     }
   } else {
@@ -884,6 +1214,27 @@ function updateLocalMovement(dt) {
 }
 
 function maybeSendInput() {
+  if (state.onlineRoom) {
+    const now = performance.now();
+    if (now - state.lastInputSentAt < 45) return;
+    state.lastInputSentAt = now;
+    if (state.onlineRoom.isHost) {
+      broadcastOnlineRoomState();
+    } else {
+      sendOnlineMessage({
+        type: 'input',
+        seat: state.localSeat,
+        state: {
+          position: state.local.position.toArray(),
+          yaw: state.local.yaw,
+          pitch: 0,
+          moving: state.local.moving,
+        },
+      });
+    }
+    return;
+  }
+
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   const now = performance.now();
   if (now - state.lastInputSentAt < 45) return;
@@ -903,7 +1254,7 @@ function awardPoint(winner, reason) {
   if (!winner || state.match.phase !== 'rally') return;
   state.match.points[winner] += 1;
   state.match.server = winner;
-  state.match.message = `${winner === 'A' ? '你方' : '电脑'}得分：${reason}`;
+  state.match.message = `${sideLabel(winner)}得分：${reason}`;
   state.ball.velocity.set(0, 0, 0);
 
   if (state.match.points[winner] >= 15) {
@@ -913,13 +1264,13 @@ function awardPoint(winner, reason) {
     if (state.match.games[winner] >= 2) {
       state.match.phase = 'matchOver';
       state.match.winner = winner;
-      state.match.message = winner === 'A' ? '你赢得比赛' : '电脑赢得比赛';
+      state.match.message = `${sideLabel(winner)}赢得比赛`;
       return;
     }
 
     state.match.phase = 'gameOver';
     state.match.nextAt = performance.now() + 3000;
-    state.match.message = `${winner === 'A' ? '你方' : '电脑'}赢得本局`;
+    state.match.message = `${sideLabel(winner)}赢得本局`;
     return;
   }
 
@@ -995,6 +1346,11 @@ function messageForLocal() {
     .replaceAll(`${state.opponentSeat}`, '对手');
 }
 
+function sideLabel(seat) {
+  if (state.mode === 'single') return seat === 'A' ? '你方' : '电脑';
+  return `${seat} 方`;
+}
+
 function maybeShowEnd() {
   if (state.match.phase !== 'matchOver' || state.previousPhase === 'matchOver') return;
   state.previousPhase = 'matchOver';
@@ -1012,7 +1368,42 @@ function maybeShowEnd() {
   });
   dom.setSummary.innerHTML = rows.join('') || '<div>暂无局分记录</div>';
   dom.endScreen.classList.remove('hidden');
+  recordMatchResult().catch((error) => {
+    console.warn('Failed to save match result', error);
+    toast('比赛结果未能保存到云端');
+  });
   if (document.pointerLockElement === dom.canvas) document.exitPointerLock();
+}
+
+async function recordMatchResult() {
+  if (!isSupabaseConfigured()) return;
+  if (state.mode === 'multi' && !state.onlineRoom?.isHost) return;
+
+  const key = `${state.mode}:${state.roomId || 'single'}:${state.match.setScores.length}:${state.match.winner}`;
+  if (state.resultSaveKey === key) return;
+  state.resultSaveKey = key;
+
+  const names = state.onlineRoom?.names || { A: 'Player', B: 'Computer' };
+  const winnerName = state.match.winner === 'A' ? names.A : names.B;
+  const durationSeconds = state.matchStartedAt
+    ? Math.round((performance.now() - state.matchStartedAt) / 1000)
+    : null;
+
+  await saveMatchResult({
+    roomId: state.mode === 'multi' ? state.roomId : null,
+    mode: state.mode,
+    playerAName: names.A || 'Player',
+    playerBName: names.B || (state.mode === 'single' ? 'Computer' : 'Player'),
+    winnerSide: state.match.winner,
+    winnerName,
+    gamesA: state.match.games.A,
+    gamesB: state.match.games.B,
+    finalPointsA: state.match.points.A,
+    finalPointsB: state.match.points.B,
+    setScores: state.match.setScores,
+    durationSeconds,
+  });
+  toast('比赛结果已保存到 Supabase');
 }
 
 function playAgain() {
@@ -1087,6 +1478,7 @@ function showGameHud() {
 function goMenu() {
   if (document.pointerLockElement === dom.canvas) document.exitPointerLock();
   disconnectSocket();
+  leaveOnlineRoom();
   cancelCharge();
   state.mode = 'menu';
   state.paused = false;
@@ -1113,6 +1505,16 @@ function disconnectSocket() {
     state.ws.close();
     state.ws = null;
   }
+}
+
+function leaveOnlineRoom() {
+  if (state.onlineRoom?.joinTimeoutId) {
+    window.clearTimeout(state.onlineRoom.joinTimeoutId);
+  }
+  if (state.onlineRoom?.client && state.onlineRoom?.channel) {
+    state.onlineRoom.client.removeChannel(state.onlineRoom.channel);
+  }
+  state.onlineRoom = null;
 }
 
 function swingRacket() {

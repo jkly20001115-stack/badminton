@@ -15,6 +15,11 @@ Required client values:
 
 `SUPABASE_ANON_KEY` or `VITE_SUPABASE_ANON_KEY` can be used as a fallback for older projects.
 
+The default frontend configuration points at the `badminton` Supabase project:
+
+- Project ID: `hsasqrbdodluijskxvyu`
+- URL: `https://hsasqrbdodluijskxvyu.supabase.co`
+
 ## Vercel
 
 Set these environment variables in Vercel before deploying:

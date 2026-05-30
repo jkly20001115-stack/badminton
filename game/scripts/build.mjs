@@ -9,12 +9,15 @@ const threeSource = resolve(root, 'node_modules/three/build/three.module.js');
 const threeTarget = resolve(vendorDir, 'three.module.js');
 const envTarget = resolve(publicDir, 'env.js');
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
+const defaultSupabaseUrl = 'https://hsasqrbdodluijskxvyu.supabase.co';
+const defaultPublishableKey = 'sb_publishable_WFXiEOdn7IDiRslVJTcaZQ_n3psfI8_';
+
+const supabaseUrl = process.env.SUPABASE_URL || defaultSupabaseUrl;
 const publishableKey =
   process.env.SUPABASE_PUBLISHABLE_KEY ||
   process.env.SUPABASE_ANON_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
-  '';
+  defaultPublishableKey;
 
 await mkdir(vendorDir, { recursive: true });
 await copyFile(threeSource, threeTarget);

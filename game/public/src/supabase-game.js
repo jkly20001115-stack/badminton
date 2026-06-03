@@ -10,20 +10,25 @@ export function isSupabaseConfigured() {
 export async function getSupabaseClient() {
   if (!isSupabaseConfigured()) return null;
   if (!clientPromise) {
-    clientPromise = import(SUPABASE_JS_URL).then(({ createClient }) => {
-      const config = getConfig();
-      return createClient(config.url, config.publishableKey, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-        realtime: {
-          params: {
-            eventsPerSecond: 30,
+    clientPromise = import(SUPABASE_JS_URL)
+      .then(({ createClient }) => {
+        const config = getConfig();
+        return createClient(config.url, config.publishableKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
           },
-        },
+          realtime: {
+            params: {
+              eventsPerSecond: 30,
+            },
+          },
+        });
+      })
+      .catch((error) => {
+        clientPromise = null;
+        throw new Error(`Supabase SDK 加载失败：${error.message}`);
       });
-    });
   }
   return clientPromise;
 }
@@ -72,7 +77,7 @@ export async function saveMatchResult(result) {
       final_points_b: result.finalPointsB,
       set_scores: result.setScores,
       duration_seconds: result.durationSeconds,
-      client_version: result.clientVersion || 'badminton0.1',
+      client_version: result.clientVersion || 'badminton0.2',
     })
     .select('id')
     .single();

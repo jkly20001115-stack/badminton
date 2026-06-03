@@ -3,18 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>第一人称羽毛球</title>
+    <title>我是超一流</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main id="app">
-      <canvas id="gameCanvas" aria-label="第一人称羽毛球游戏画面"></canvas>
+      <div id="arenaBackground" class="arena-background" aria-hidden="true"></div>
+      <canvas id="gameCanvas" aria-label="我是超一流羽毛球游戏画面"></canvas>
 
       <section id="menu" class="screen">
         <div class="menu-shell">
-          <p class="eyebrow">First Person Badminton</p>
-          <h1>第一人称羽毛球</h1>
-          <p class="lead">15 分制，三局两胜。单人对战脚本电脑，双人通过房间联网对战。</p>
+          <p class="eyebrow">Elite Badminton Arena</p>
+          <h1>我是超一流</h1>
+          <p class="lead">15 分制，三局两胜。练习单打、在线双人和多轮淘汰赛，都在同一座球馆开打。</p>
 
           <div class="mode-grid">
             <button id="singleModeBtn" class="mode-button" type="button">
@@ -25,7 +26,44 @@
               <span>双人模式</span>
               <small>创建房间或输入房间号加入</small>
             </button>
+            <button id="tournamentModeBtn" class="mode-button" type="button">
+              <span>淘汰赛模式</span>
+              <small>参加奥运会、世锦赛、全英和系列赛多轮挑战</small>
+            </button>
+            <button id="historyBtn" class="mode-button" type="button">
+              <span>历史战绩</span>
+              <small>查看并删除本机保存的比赛结果</small>
+            </button>
           </div>
+        </div>
+      </section>
+
+      <section id="tournamentPanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>淘汰赛模式</h2>
+          <label class="field">
+            <span>选择赛事</span>
+            <select id="tournamentSelect">
+              <option value="olympics">奥运会</option>
+              <option value="worlds">世界锦标赛</option>
+              <option value="all-england">全英公开赛</option>
+              <option value="world-tour">世界巡回系列赛</option>
+            </select>
+          </label>
+          <p id="tournamentDescription" class="panel-copy"></p>
+          <button id="startTournamentBtn" class="primary" type="button">开始征程</button>
+        </div>
+      </section>
+
+      <section id="historyPanel" class="screen hidden">
+        <div class="panel panel-wide">
+          <button class="ghost back-menu" type="button">返回</button>
+          <div class="panel-heading">
+            <h2>历史战绩</h2>
+            <button id="clearHistoryBtn" class="danger-button" type="button">清空记录</button>
+          </div>
+          <div id="historyList" class="history-list"></div>
         </div>
       </section>
 
@@ -67,6 +105,7 @@
       </section>
 
       <section id="hud" class="hud hidden" aria-live="polite">
+        <div id="tournamentBadge" class="tournament-badge hidden"></div>
         <div class="score-strip">
           <div>
             <span class="label">你</span>

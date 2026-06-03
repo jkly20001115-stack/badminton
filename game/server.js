@@ -11,6 +11,8 @@ const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const COURT = {
   halfLength: 6.7,
   halfWidth: 3.05,
+  singlesHalfWidth: 2.59,
+  shortServiceZ: 1.98,
   netHeight: 1.55,
   playerY: 1.65,
   minPlayerZ: { A: -6.45, B: 0.55 },
@@ -19,6 +21,10 @@ const COURT = {
 
 const MIN_HIT_POWER = 0.75;
 const MAX_HIT_POWER = 1.45;
+const MIN_PITCH = -0.48;
+const MAX_PITCH = 0.56;
+const MAX_JUMP_HEIGHT = 1.35;
+const NORMAL_SHOT_ARC_TIME_SCALE = Math.SQRT2;
 
 const clients = new Map();
 const rooms = new Map();
@@ -352,21 +358,49 @@ function tickRoom(room, dt, now) {
     const crossedRatio = Math.abs(previousZ) / (Math.abs(previousZ) + Math.abs(ball.position[2]) || 1);
     const netY = ball.position[1] - ball.velocity[1] * dt * (1 - crossedRatio);
     if (netY < COURT.netHeight + 0.12) {
-      awardPoint(room, opponent(ball.lastHit || match.server), '羽毛球下网');
+      awardPoint(room, opponent(ball.lastHit || match.server), ball.serve ? '发球下网' : '羽毛球下网');
       return;
     }
   }
 
   if (ball.position[1] <= 0.08) {
-    const landedInCourt = Math.abs(ball.position[0]) <= COURT.halfWidth && Math.abs(ball.position[2]) <= COURT.halfLength;
-    const landedOnOpponentSide = ball.lastHit === 'A' ? ball.position[2] > 0 : ball.position[2] < 0;
-    awardPoint(room, landedInCourt && landedOnOpponentSide ? ball.lastHit : opponent(ball.lastHit), landedInCourt ? '有效落地' : '击球出界');
+    const landing = evaluateLanding(ball.lastHit, ball.position, ball.serve);
+    awardPoint(room, landing.winner, landing.reason);
     return;
   }
 
-  if (Math.abs(ball.position[0]) > 5.5 || Math.abs(ball.position[2]) > 8.5 || ball.position[1] < -1.5) {
+  if (Math.abs(ball.position[0]) > 4.2 || Math.abs(ball.position[2]) > 7.6 || ball.position[1] < -1.5) {
     awardPoint(room, opponent(ball.lastHit), '击球出界');
   }
+}
+
+function evaluateLanding(lastHit, position, serve) {
+  const onOpponentSide = lastHit === 'A' ? position[2] > 0 : position[2] < 0;
+  if (!onOpponentSide) {
+    return { winner: opponent(lastHit), reason: serve ? '发球未过网' : '击球落在本方半场' };
+  }
+  if (!isInSinglesCourt(position)) {
+    return { winner: opponent(lastHit), reason: '击球出界' };
+  }
+  if (serve && !isValidServeLanding(serve.server, serve.score, position)) {
+    return { winner: opponent(lastHit), reason: '发球未落入斜线发球区' };
+  }
+  return { winner: lastHit, reason: serve ? '合法发球落地' : '有效落地' };
+}
+
+function isInSinglesCourt(position) {
+  return Math.abs(position[0]) <= COURT.singlesHalfWidth && Math.abs(position[2]) <= COURT.halfLength;
+}
+
+function isValidServeLanding(serverSeat, score, position) {
+  const beyondShortServiceLine = serverSeat === 'A'
+    ? position[2] >= COURT.shortServiceZ
+    : position[2] <= -COURT.shortServiceZ;
+  const expectedTargetSign = -serveSideSign(serverSeat, score);
+  return beyondShortServiceLine
+    && Math.abs(position[0]) <= COURT.singlesHalfWidth
+    && Math.abs(position[2]) <= COURT.halfLength
+    && position[0] * expectedTargetSign > 0.06;
 }
 
 function updatePlayer(room, seat, state = {}) {
@@ -376,12 +410,13 @@ function updatePlayer(room, seat, state = {}) {
 
   player.position = [
     clamp(Number(inputPosition[0]) || 0, -COURT.halfWidth, COURT.halfWidth),
-    COURT.playerY,
+    clamp(Number(inputPosition[1]) || COURT.playerY, COURT.playerY, COURT.playerY + MAX_JUMP_HEIGHT),
     clamp(Number(inputPosition[2]) || player.position[2], COURT.minPlayerZ[seat], COURT.maxPlayerZ[seat]),
   ];
   player.yaw = normalizeAngle(Number(state.yaw) || player.yaw);
-  player.pitch = 0;
+  player.pitch = clamp(Number(state.pitch) || 0, MIN_PITCH, MAX_PITCH);
   player.moving = Boolean(state.moving);
+  player.grounded = Boolean(state.grounded) || player.position[1] <= COURT.playerY + 0.01;
 
   if (room.match.phase === 'serve' && room.match.server === seat) {
     updateServeBallPosition(room, seat);
@@ -399,14 +434,16 @@ function tryHit(room, seat, aim = {}) {
   if (now - player.lastHitAt < 420) return;
 
   if (match.phase === 'serve') {
+    if (!isValidServePosition(seat, player.position, match.points[seat])) return;
     updateServeBallPosition(room, seat);
   }
 
   const dx = ball.position[0] - player.position[0];
-  const dy = ball.position[1] - 1.25;
+  const dy = ball.position[1] - (player.position[1] - 0.4);
   const dz = ball.position[2] - player.position[2];
   const distance = Math.hypot(dx, dy, dz);
-  if (distance > (match.phase === 'serve' ? 3.25 : 2.7) || ball.position[1] < 0.25 || ball.position[1] > 3.6) {
+  const jumpHeight = Math.max(0, player.position[1] - COURT.playerY);
+  if (distance > (match.phase === 'serve' ? 3.25 : 2.7) || ball.position[1] < 0.25 || ball.position[1] > 3.6 + jumpHeight * 0.9) {
     return;
   }
 
@@ -415,14 +452,17 @@ function tryHit(room, seat, aim = {}) {
     finiteNumber(aim.y, 0),
     finiteNumber(aim.z, seat === 'A' ? 1 : -1),
   ]);
-  ball.velocity = velocityFromAim(seat, direction, ball.position, match.phase, finiteNumber(aim.power, 1));
+  const wasServe = match.phase === 'serve';
+  const shotType = normalizeShotType(aim.shotType);
+  ball.velocity = velocityFromAim(seat, direction, ball.position, match.phase, finiteNumber(aim.power, 1), shotType);
   ball.lastHit = seat;
+  ball.serve = wasServe ? { server: seat, score: match.points[seat] } : null;
   ball.position[1] = Math.max(ball.position[1], 0.9);
   ball.moving = true;
   player.lastHitAt = now;
   match.phase = 'rally';
   match.rally += 1;
-  match.message = `${seat} 方击球`;
+  match.message = `${seat} 方${shotType === 'heavySmash' ? '重杀' : shotType === 'smash' ? '杀球' : '击球'}`;
 }
 
 function awardPoint(room, winner, reason) {
@@ -462,6 +502,7 @@ function resetPlayers(room) {
 
 function resetBall(room, serverSeat) {
   room.ball = makeBall(serverSeat);
+  positionServerForServe(room, serverSeat);
   updateServeBallPosition(room, serverSeat);
 }
 
@@ -471,6 +512,7 @@ function makePlayer(seat) {
     yaw: seat === 'A' ? 0 : Math.PI,
     pitch: 0,
     moving: false,
+    grounded: true,
     lastHitAt: 0,
   };
 }
@@ -496,6 +538,7 @@ function makeBall(serverSeat) {
     velocity: [0, 0, 0],
     lastHit: serverSeat,
     moving: false,
+    serve: null,
   };
 }
 
@@ -518,6 +561,30 @@ function serveBallPosition(seat, playerPosition) {
     1.45,
     clamp(playerPosition[2] + toward * 0.9, minZ, maxZ),
   ];
+}
+
+function positionServerForServe(room, seat) {
+  const player = room.players[seat];
+  if (!player) return;
+  player.position[0] = serveSideSign(seat, room.match.points[seat]) * 1.22;
+  player.position[1] = COURT.playerY;
+  player.position[2] = seat === 'A' ? -5.25 : 5.25;
+  player.yaw = seat === 'A' ? 0 : Math.PI;
+  player.pitch = 0;
+  player.grounded = true;
+}
+
+function serveSideSign(seat, score) {
+  const rightSide = seat === 'A' ? -1 : 1;
+  return Number(score) % 2 === 0 ? rightSide : -rightSide;
+}
+
+function isValidServePosition(seat, position, score) {
+  const correctHalf = position[0] * serveSideSign(seat, score) > 0.08;
+  const behindShortServiceLine = seat === 'A'
+    ? position[2] <= -COURT.shortServiceZ
+    : position[2] >= COURT.shortServiceZ;
+  return correctHalf && behindShortServiceLine;
 }
 
 function getRoomState(room) {
@@ -597,7 +664,11 @@ function finiteNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function velocityFromAim(seat, direction, start, phase, power = 1) {
+function normalizeShotType(value) {
+  return ['smash', 'heavySmash'].includes(value) ? value : 'normal';
+}
+
+function velocityFromAim(seat, direction, start, phase, power = 1, shotType = 'normal') {
   const toward = seat === 'A' ? 1 : -1;
   if (direction[2] * toward < 0.2) direction[2] = toward * 0.35;
 
@@ -610,8 +681,26 @@ function velocityFromAim(seat, direction, start, phase, power = 1) {
   const targetX = clamp(start[0] + lateral, -2.75, 2.75);
   const baseTime = phase === 'serve' ? 0.82 + depth * 0.18 : 0.62 + depth * 0.28;
   const flightTime = baseTime / (0.78 + hitPower * 0.35);
-  const velocity = velocityToTarget(start, [targetX, 0.08, targetZ], flightTime);
+  const target = [targetX, 0.08, targetZ];
+  if (phase !== 'serve' && shotType !== 'normal') {
+    return velocityToSmashTarget(start, target, flightTime, shotType);
+  }
+  const velocity = velocityToTarget(start, target, normalShotFlightTime(flightTime, phase === 'serve', shotType));
   return ensureNetClearance(start, velocity, toward);
+}
+
+function velocityToSmashTarget(start, target, flightTime, shotType) {
+  const baseline = velocityToTarget(start, target, flightTime);
+  const multiplier = shotType === 'heavySmash' ? 2.25 : 1.75;
+  const angleRange = shotType === 'heavySmash' ? [20, 30] : [15, 30];
+  const angle = (angleRange[0] + Math.random() * (angleRange[1] - angleRange[0])) * Math.PI / 180;
+  const horizontal = normalizeVector([target[0] - start[0], 0, target[2] - start[2]]);
+  const speed = Math.hypot(...baseline) * multiplier;
+  return [
+    horizontal[0] * speed * Math.cos(angle),
+    -speed * Math.sin(angle),
+    horizontal[2] * speed * Math.cos(angle),
+  ];
 }
 
 function velocityToTarget(start, target, time) {
@@ -620,6 +709,12 @@ function velocityToTarget(start, target, time) {
     (target[1] - start[1] - 0.5 * -9.8 * time * time) / time,
     (target[2] - start[2]) / time,
   ];
+}
+
+function normalShotFlightTime(flightTime, isServe, shotType = 'normal') {
+  return !isServe && (!shotType || shotType === 'normal')
+    ? flightTime * NORMAL_SHOT_ARC_TIME_SCALE
+    : flightTime;
 }
 
 function ensureNetClearance(start, velocity, toward) {

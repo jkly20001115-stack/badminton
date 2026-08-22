@@ -1,0 +1,13 @@
+{
+  "name": "elite-badminton-arena",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.164.1"
+  }
+}

@@ -1,6 +1,6 @@
 {
-  "installCommand": "cd game && npm install",
-  "buildCommand": "cd game && npm run build",
-  "outputDirectory": "game/public",
+  "installCommand": "cd badminton0.2 && npm install",
+  "buildCommand": "cd badminton0.2 && npm run build",
+  "outputDirectory": "badminton0.2/public",
   "framework": null
 }

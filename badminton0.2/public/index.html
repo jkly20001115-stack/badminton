@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我是超一流</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="gameCanvas" aria-label="我是超一流羽毛球游戏画面"></canvas>
+
+      <section id="menu" class="screen">
+        <div class="menu-shell">
+          <div class="menu-topbar">
+            <div class="brand-lockup">
+              <span class="brand-mark" aria-hidden="true"></span>
+              <span>Elite Badminton Arena</span>
+            </div>
+            <span class="build-badge">LOCAL BUILD 0.2</span>
+          </div>
+
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <p class="eyebrow">清爽上场，认真赢球</p>
+              <h1>我是<br /><span>超一流</span></h1>
+              <p class="lead">15 分制，三局两胜。从一场练习赛，到世界赛场的最后一分。</p>
+              <div class="control-chips" aria-label="核心操作提示">
+                <span>WASD 移动</span>
+                <span>鼠标瞄准</span>
+                <span>左键击球</span>
+              </div>
+            </div>
+            <aside class="match-card" aria-label="比赛规则摘要">
+              <span class="match-card-label">MATCH FORMAT</span>
+              <strong>15</strong>
+              <span class="match-card-unit">分制</span>
+              <p>三局两胜 · 单打边线 · 对角发球</p>
+              <div class="match-card-line"></div>
+              <small>准备好就选择一种模式开始。</small>
+            </aside>
+          </div>
+
+          <div class="mode-grid">
+            <button id="singleModeBtn" class="mode-button mode-feature" type="button">
+              <span class="mode-meta"><span>01</span><span>SOLO</span></span>
+              <span class="mode-title">单人模式</span>
+              <small>选择难度，与更聪明的电脑对手完成一场正式单打。</small>
+              <span class="mode-action">进入赛场</span>
+            </button>
+            <button id="tournamentModeBtn" class="mode-button mode-feature mode-tournament" type="button">
+              <span class="mode-meta"><span>02</span><span>TOUR</span></span>
+              <span class="mode-title">淘汰赛模式</span>
+              <small>连续挑战多轮对手，把冠军带回主场。</small>
+              <span class="mode-action">开始征程</span>
+            </button>
+            <button id="multiModeBtn" class="mode-button mode-compact" type="button">
+              <span class="mode-meta"><span>03</span><span>ONLINE</span></span>
+              <span class="mode-title">双人模式</span>
+              <small>创建房间或输入房间号加入。</small>
+            </button>
+            <button id="historyBtn" class="mode-button" type="button">
+              <span class="mode-meta"><span>04</span><span>RECORD</span></span>
+              <span class="mode-title">历史战绩</span>
+              <small>查看和管理本机比赛记录。</small>
+            </button>
+            <button id="instructionsBtn" class="mode-button" type="button">
+              <span class="mode-meta"><span>05</span><span>GUIDE</span></span>
+              <span class="mode-title">游戏说明</span>
+              <small>两分钟看懂移动、瞄准与击球。</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="tournamentPanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>淘汰赛模式</h2>
+          <label class="field">
+            <span>选择赛事</span>
+            <select id="tournamentSelect">
+              <option value="olympics">奥运会</option>
+              <option value="worlds">世界锦标赛</option>
+              <option value="all-england">全英公开赛</option>
+              <option value="world-tour">世界巡回系列赛</option>
+            </select>
+          </label>
+          <p id="tournamentDescription" class="panel-copy"></p>
+          <button id="startTournamentBtn" class="primary" type="button">开始征程</button>
+        </div>
+      </section>
+
+      <section id="historyPanel" class="screen hidden">
+        <div class="panel panel-wide">
+          <button class="ghost back-menu" type="button">返回</button>
+          <div class="panel-heading">
+            <h2>历史战绩</h2>
+            <button id="clearHistoryBtn" class="danger-button" type="button">清空记录</button>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </div>
+      </section>
+
+      <section id="instructionsPanel" class="screen hidden">
+        <div class="panel panel-wide instructions-panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <div class="panel-heading instructions-heading">
+            <div>
+              <p class="panel-kicker">QUICK GUIDE</p>
+              <h2>游戏说明</h2>
+            </div>
+            <p>先移动到合适位置，再用鼠标决定镜头和出球方向。</p>
+          </div>
+          <div class="instruction-grid">
+            <article class="instruction-card">
+              <span class="instruction-number">01</span>
+              <h3>移动与视角</h3>
+              <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 在己方半场移动，移动鼠标控制镜头和击球方向，<kbd>Shift</kbd> 加速。</p>
+            </article>
+            <article class="instruction-card">
+              <span class="instruction-number">02</span>
+              <h3>击球与起跳</h3>
+              <p>按住鼠标左键蓄力，松开完成普通击球；<kbd>Space</kbd> 起跳；右键杀球，快速双击右键重杀。</p>
+            </article>
+            <article class="instruction-card">
+              <span class="instruction-number">03</span>
+              <h3>发球规则</h3>
+              <p>双数分站右发球区，单数分站左发球区。发球必须斜线进入对方发球区并越过短发球线。</p>
+            </article>
+            <article class="instruction-card">
+              <span class="instruction-number">04</span>
+              <h3>得分与边界</h3>
+              <p>球落在单打边线外、未过网或连续落地都会失分。每局 15 分，领先 2 分取胜，三局两胜。</p>
+            </article>
+          </div>
+          <div class="instruction-tip">进入比赛后，先点击球场锁定鼠标；按 <kbd>Esc</kbd> 可暂停并释放鼠标。</div>
+        </div>
+      </section>
+
+      <section id="singlePanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>单人模式</h2>
+          <label class="field">
+            <span>电脑难度</span>
+            <select id="difficultySelect">
+              <option value="easy">简单</option>
+              <option value="normal" selected>普通</option>
+              <option value="hard">困难</option>
+            </select>
+          </label>
+          <button id="startSingleBtn" class="primary" type="button">开始比赛</button>
+        </div>
+      </section>
+
+      <section id="multiPanel" class="screen hidden">
+        <div class="panel">
+          <button class="ghost back-menu" type="button">返回</button>
+          <h2>双人模式</h2>
+          <label class="field">
+            <span>昵称</span>
+            <input id="playerNameInput" maxlength="18" placeholder="Player" />
+          </label>
+          <div class="button-row">
+            <button id="createRoomBtn" class="primary" type="button">创建房间</button>
+            <button id="joinRoomBtn" class="secondary" type="button">加入房间</button>
+          </div>
+          <label class="field">
+            <span>房间号</span>
+            <input id="roomCodeInput" maxlength="8" placeholder="例如 A1B2" />
+          </label>
+          <div id="roomStatus" class="status-box">尚未连接房间</div>
+          <button id="readyBtn" class="primary hidden" type="button">准备</button>
+        </div>
+      </section>
+
+      <section id="hud" class="hud hidden" aria-live="polite">
+        <div id="tournamentBadge" class="tournament-badge hidden"></div>
+        <div class="score-strip">
+          <div>
+            <span class="label">你</span>
+            <strong id="localScore">0</strong>
+          </div>
+          <div>
+            <span class="label">对手</span>
+            <strong id="awayScore">0</strong>
+          </div>
+          <div>
+            <span class="label">局分</span>
+            <strong id="gameScore">0 : 0</strong>
+          </div>
+          <div>
+            <span class="label">第</span>
+            <strong id="setNumber">1 局</strong>
+          </div>
+        </div>
+        <div id="messageBar" class="message-bar">点击画面进入第一人称视角</div>
+      </section>
+
+      <section id="endScreen" class="screen hidden">
+        <div class="panel">
+          <h2 id="endTitle">比赛结束</h2>
+          <div id="setSummary" class="set-summary"></div>
+          <div class="button-row">
+            <button id="playAgainBtn" class="primary" type="button">再来一场</button>
+            <button id="quitBtn" class="secondary" type="button">返回主菜单</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="pauseScreen" class="screen pause-screen hidden">
+        <div class="panel">
+          <h2 id="pauseTitle">已暂停</h2>
+          <p id="pauseText" class="pause-copy">当前对局已暂停。</p>
+          <div class="button-row">
+            <button id="resumeBtn" class="primary" type="button">继续比赛</button>
+            <button id="pauseQuitBtn" class="secondary" type="button">退出对局</button>
+          </div>
+        </div>
+      </section>
+
+      <button id="pauseFab" class="pause-fab hidden" type="button">暂停/退出</button>
+      <div id="crosshair" class="crosshair hidden" aria-hidden="true"></div>
+      <div id="toast" class="toast hidden"></div>
+    </main>
+
+    <script src="./env.js"></script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
